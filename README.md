@@ -125,7 +125,9 @@ npm run build    # static output to ./dist
 npm run preview  # serve the build
 ```
 
-Requires Node.js 22.12+.
+Requires Node.js 24 — `engines` pins the `24.x` line, the current LTS, matching
+what the project is developed on. Astro's own floor is 22.12, so 22 also works if
+you pin it there.
 
 To use the app you need a browser wallet on Sepolia holding SFLUSH, plus a little
 Sepolia ETH for gas.
@@ -146,13 +148,24 @@ transport: http("https://eth-sepolia.g.alchemy.com/v2/<key>"),
 
 `npm run build` produces a static `./dist` — any static host will serve it.
 
-[`public/_headers`](public/_headers) carries security headers in Netlify /
-Cloudflare Pages format; other hosts need the equivalent. The important one is
-`frame-ancestors 'none'`, since a wallet UI inside a hostile iframe is a drainer
-pattern, and `frame-ancestors` is ignored in a `<meta>` tag by spec. A stricter
-full CSP is included commented out — it needs verifying against the deployed page
-first, because Astro may inline critical CSS and EIP-6963 wallets announce their
-icons as `data:` URIs.
+Security headers are declared twice, because header config is host-specific and
+a file the host does not read fails silently:
+
+| File | Host |
+| --- | --- |
+| [`vercel.json`](vercel.json) | Vercel (where this is deployed) |
+| [`public/_headers`](public/_headers) | Netlify / Cloudflare Pages |
+
+The important one is `frame-ancestors 'none'`, since a wallet UI inside a hostile
+iframe is a drainer pattern, and `frame-ancestors` is ignored in a `<meta>` tag by
+spec — it has to be an HTTP header. A stricter full CSP is included commented out
+in `_headers`; it needs verifying against the deployed page first, because Astro
+may inline critical CSS and EIP-6963 wallets announce their icons as `data:` URIs.
+
+`engines.node` is pinned to `24.x` rather than an open-ended `>=` range: the
+latter lets the host jump to the next Node major the day it ships, turning an
+unrelated deploy into a surprise runtime upgrade. Pinning the major also keeps
+CI and local development on the same runtime.
 
 ## Known limits
 
