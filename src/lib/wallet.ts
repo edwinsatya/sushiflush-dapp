@@ -17,6 +17,8 @@ export type DiscoveredWallet = {
 export type WalletState = {
   wallets: DiscoveredWallet[];
   status: "idle" | "connecting" | "connected";
+  /** rdns of the wallet a connection is in flight for, so the UI can show it. */
+  pending?: string;
   address?: Address;
   chainId?: number;
   error?: string;
@@ -107,7 +109,7 @@ function attach(wallet: DiscoveredWallet, address: Address, chainId: number) {
   active = wallet;
   walletClient = makeWalletClient(wallet.provider, address);
   localStorage.setItem(STORAGE_KEY, wallet.rdns);
-  setState({ status: "connected", address, chainId, error: undefined });
+  setState({ status: "connected", pending: undefined, address, chainId, error: undefined });
 }
 
 /** Prompts the wallet for accounts. Safe to call while already connected. */
@@ -115,7 +117,7 @@ export async function connect(rdns: string): Promise<void> {
   const wallet = state.wallets.find((w) => w.rdns === rdns);
   if (!wallet) return;
 
-  setState({ status: "connecting", error: undefined });
+  setState({ status: "connecting", pending: rdns, error: undefined });
   try {
     const accounts = (await wallet.provider.request({ method: "eth_requestAccounts" })) as Address[];
     const address = accounts[0];
@@ -124,7 +126,7 @@ export async function connect(rdns: string): Promise<void> {
     listenTo(wallet);
     attach(wallet, getAddress(address), await readChainId(wallet.provider));
   } catch (error) {
-    setState({ status: "idle", error: describeConnectError(error) });
+    setState({ status: "idle", pending: undefined, error: describeConnectError(error) });
   }
 }
 
@@ -154,7 +156,13 @@ export function disconnect(): void {
   active = undefined;
   walletClient = undefined;
   localStorage.removeItem(STORAGE_KEY);
-  setState({ status: "idle", address: undefined, chainId: undefined, error: undefined });
+  setState({
+    status: "idle",
+    pending: undefined,
+    address: undefined,
+    chainId: undefined,
+    error: undefined,
+  });
 }
 
 /** Asks the wallet to move to Sepolia; the `chainChanged` event does the rest. */

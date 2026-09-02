@@ -55,6 +55,15 @@ let discovered = false;
 /** When `data.earned` was read, so the display can project forward from it. */
 let earnedReadAt = 0;
 
+/**
+ * `exit()` unwinds the whole position from a single click with no amount to
+ * type, and the wallet popup cannot say "this is all of it". So the button arms
+ * first and states what it is about to do. Every other action either has a typed
+ * amount or is free to undo, and a second dialog there would only be noise.
+ */
+let exitArmed: { staked: string; earned: string } | null = null;
+let exitTimer: number | undefined;
+
 type ActivityState = {
   status: "disconnected" | "loading" | "ready" | "error";
   entries: ActivityEntry[];
@@ -72,6 +81,25 @@ function el<T extends HTMLElement = HTMLElement>(id: string): T {
 
 function text(id: string, value: string) {
   el(id).textContent = value;
+}
+
+/**
+ * Like `text`, but briefly highlights a figure whose value moved. Only for
+ * discrete figures — the claimable number ticks continuously, and flashing it
+ * five times a second would be strobing, not feedback.
+ */
+function figure(id: string, value: string) {
+  const node = el(id);
+  const previous = node.textContent;
+  if (previous === value) return;
+
+  node.textContent = value;
+  // Nothing "changed" when a placeholder is replaced by the first real read.
+  if (previous === null || previous === "" || previous === EMPTY) return;
+
+  node.classList.remove("value-changed");
+  void node.offsetWidth; // Forces a reflow so the animation restarts.
+  node.classList.add("value-changed");
 }
 
 function connected(): boolean {
@@ -197,18 +225,58 @@ function renderEarned() {
 }
 
 function renderPosition() {
-  text("pos-staked", formatAmount(data.staked, 2));
+  figure("pos-wallet", formatAmount(data.walletBalance, 2));
+  figure("pos-staked", formatAmount(data.staked, 2));
   renderEarned();
 
   const share =
     data.staked !== undefined && data.totalStaked
       ? `${formatPercent(Number(data.staked) / Number(data.totalStaked))} of the pool`
       : "";
-  text("pos-share", share);
+  text("pos-staked-note", share);
 
   const usable = ready() && !busy;
   el<HTMLButtonElement>("reward-claim").disabled = !usable || !data.earned;
-  el<HTMLButtonElement>("reward-exit").disabled = !usable || !data.staked;
+  renderExitButton();
+}
+
+const EXIT_IDLE =
+  "rounded-lg px-3.5 py-1.5 text-[13px] font-medium text-muted transition-colors hover:bg-sunken hover:text-ink disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-muted";
+const EXIT_ARMED =
+  "rounded-lg border border-accent px-3.5 py-1.5 text-[13px] font-medium text-accent transition-colors hover:bg-accent hover:text-accent-ink disabled:opacity-35";
+
+function renderExitButton() {
+  const button = el<HTMLButtonElement>("reward-exit");
+  button.disabled = !ready() || busy || !data.staked;
+
+  if (exitArmed === null) {
+    button.className = EXIT_IDLE;
+    button.textContent = "Withdraw all & claim";
+    return;
+  }
+
+  button.className = EXIT_ARMED;
+  // Figures are frozen at arm time; the claimable one ticks, and a label that
+  // changes while you read it is not a confirmation.
+  button.textContent = `Confirm: withdraw ${exitArmed.staked} & claim ${exitArmed.earned}`;
+}
+
+function armExit() {
+  exitArmed = {
+    staked: formatAmount(data.staked, 2),
+    earned: formatAmount(data.earned, 4),
+  };
+  window.clearTimeout(exitTimer);
+  // Falls back to safe on its own, so an armed button is never left lying around.
+  exitTimer = window.setTimeout(disarmExit, 6_000);
+  renderExitButton();
+}
+
+function disarmExit() {
+  if (exitArmed === null) return;
+  exitArmed = null;
+  window.clearTimeout(exitTimer);
+  renderExitButton();
 }
 
 function renderPool() {
@@ -223,7 +291,7 @@ function renderPool() {
     "pool-emission-sub",
     data.rewardRate === undefined
       ? ""
-      : `${TOKEN_SYMBOL}/s · ${formatAmount(data.rewardRate * 86_400n, 0)} per day`,
+      : `${TOKEN_SYMBOL}/s · ${formatAmount(data.rewardRate * 86_400n, 2)} per day`,
   );
 
   text("pool-remaining", formatAmount(data.remainingReward, 2));
@@ -251,12 +319,79 @@ function renderForm() {
   }
 
   text("amount-label", mode === "stake" ? "Amount to stake" : "Amount to withdraw");
-  text("amount-available-label", mode === "stake" ? "Balance" : "Staked");
-  text("amount-available", available() === undefined ? EMPTY : formatAmount(available(), 2));
+  renderAmountHint();
 
   const submit = el<HTMLButtonElement>("action-submit");
   submit.textContent = mode === "stake" ? "Stake" : "Withdraw";
-  submit.disabled = !ready() || busy;
+  // An amount that cannot be submitted disables the button rather than failing
+  // on click; the hint beside the label says why.
+  submit.disabled = !ready() || busy || amountEntry().error !== null;
+
+  // A transaction awaiting signature is already committed to an amount, so the
+  // whole form locks — editing the field behind a pending wallet prompt only
+  // creates a mismatch between what is on screen and what is being signed.
+  el<HTMLInputElement>("amount").disabled = !ready() || busy;
+  el<HTMLButtonElement>("amount-max").disabled = !ready() || busy;
+  el<HTMLButtonElement>("tab-stake").disabled = busy;
+  el<HTMLButtonElement>("tab-withdraw").disabled = busy;
+  el("action-form").classList.toggle("opacity-60", busy);
+}
+
+/**
+ * The field is `type="text"` so it can hold big decimal strings without the
+ * quirks of `type="number"`, which means it accepts letters unless they are
+ * filtered out. Commas are dropped rather than rejected, so a figure copied
+ * from the page ("980,159.92") pastes cleanly.
+ */
+function sanitizeAmount(raw: string): string {
+  const digits = raw.replace(/[^\d.]/g, "");
+  const dot = digits.indexOf(".");
+  if (dot === -1) return digits;
+  return digits.slice(0, dot + 1) + digits.slice(dot + 1).replace(/\./g, "");
+}
+
+type AmountEntry = { amount: bigint | null; error: string | null };
+
+/** Validates the field once, so the hint and the button agree on the reason. */
+function amountEntry(): AmountEntry {
+  const raw = el<HTMLInputElement>("amount").value.trim();
+  if (raw === "") return { amount: null, error: "empty" };
+
+  const amount = parseAmount(raw);
+  if (amount === null) return { amount: null, error: "Enter a number greater than zero" };
+
+  const limit = available();
+  if (limit !== undefined && amount > limit) {
+    return { amount, error: mode === "stake" ? "More than your balance" : "More than you staked" };
+  }
+  return { amount, error: null };
+}
+
+/**
+ * Reports the consequence of the typed amount rather than restating the
+ * balance, which is already a headline figure — the same number twice reads as
+ * a duplicate, the remainder does not.
+ */
+function renderAmountHint() {
+  const hint = el("amount-hint");
+  const { amount, error } = amountEntry();
+
+  if (error === "empty") {
+    hint.textContent = "";
+    return;
+  }
+  if (error !== null) {
+    hint.textContent = error;
+    hint.className = "figure text-[12px] text-accent";
+    return;
+  }
+
+  const limit = available();
+  hint.className = "figure text-[12px] text-faint";
+  hint.textContent =
+    limit === undefined || amount === null
+      ? ""
+      : `${formatAmount(limit - amount, 2)} ${mode === "stake" ? "left in wallet" : "still staked"}`;
 }
 
 /**
@@ -309,23 +444,33 @@ function renderPreview() {
   const staked = data.staked;
   const total = data.totalStaked;
   const next = projection();
+  const projecting = next !== undefined;
+
+  // The band above already shows stake and pool share, so these rows only earn
+  // their space once there is a before-and-after to compare.
+  el("preview-row-staked").hidden = !projecting;
+  el("preview-row-share").hidden = !projecting;
+  text("preview-title", projecting ? "After this transaction" : "Your position");
 
   if (staked === undefined || total === undefined) {
     for (const row of ["preview-staked", "preview-share", "preview-daily"]) {
       setPreviewRow(row, EMPTY, undefined);
     }
   } else {
-    setPreviewRow(
-      "preview-staked",
-      formatAmount(staked, 2),
-      next && formatAmount(next.staked, 2),
-    );
+    setPreviewRow("preview-staked", formatAmount(staked, 2), next && formatAmount(next.staked, 2));
     setPreviewRow("preview-share", shareText(staked, total), next && shareText(next.staked, next.total));
     setPreviewRow("preview-daily", dailyText(staked, total), next && dailyText(next.staked, next.total));
   }
 
   const ended = data.periodFinish !== undefined && Number(data.periodFinish) * 1000 <= Date.now();
-  text("preview-note", ended ? "The reward period has ended — no new rewards accrue." : "");
+  text(
+    "preview-note",
+    ended
+      ? "The reward period has ended — no new rewards accrue."
+      : projecting
+        ? ""
+        : "Enter an amount to preview the change.",
+  );
 }
 
 const ACTIVITY_LABEL: Record<ActivityKind, string> = {
@@ -425,29 +570,48 @@ function renderActivity() {
   more.disabled = activity.status === "loading";
 }
 
-function renderConnectors() {
-  const box = el("wallet-connect");
+/** Rebuild only when something the buttons display actually changed. */
+let connectorsKey = "";
 
-  for (const found of wallet.wallets) {
-    const id = `connect-${found.rdns}`;
-    if (document.getElementById(id)) continue;
+function renderConnectors() {
+  const key = [wallet.wallets.map((w) => w.rdns).join(","), wallet.status, wallet.pending].join("|");
+  if (key === connectorsKey) return;
+  connectorsKey = key;
+
+  const box = el("wallet-connect");
+  const buttons = wallet.wallets.map((found) => {
+    const connecting = wallet.pending === found.rdns;
 
     const button = document.createElement("button");
-    button.id = id;
+    button.id = `connect-${found.rdns}`;
     button.type = "button";
+    // Any connection in flight owns the wallet popup, so the others would only
+    // queue a second prompt behind it.
+    button.disabled = wallet.status === "connecting";
     button.className =
-      "flex items-center gap-2 rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent-hover";
-    if (found.icon) {
-      const img = document.createElement("img");
-      img.src = found.icon;
-      img.alt = "";
-      img.className = "size-4 rounded-[3px]";
-      button.append(img);
+      "flex items-center gap-2 rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent-hover disabled:opacity-60 disabled:hover:bg-accent";
+
+    if (connecting) {
+      const spinner = document.createElement("span");
+      spinner.className =
+        "size-3.5 animate-spin rounded-full border-2 border-current border-t-transparent";
+      button.append(spinner, document.createTextNode("Check your wallet…"));
+    } else {
+      if (found.icon) {
+        const img = document.createElement("img");
+        img.src = found.icon;
+        img.alt = "";
+        img.className = "size-4 rounded-[3px]";
+        button.append(img);
+      }
+      button.append(document.createTextNode(found.name));
     }
-    button.append(document.createTextNode(found.name));
+
     button.addEventListener("click", () => void connect(found.rdns));
-    box.append(button);
-  }
+    return button;
+  });
+
+  box.replaceChildren(el("wallet-empty"), ...buttons);
 }
 
 // ---------------------------------------------------------------- writes
@@ -501,6 +665,7 @@ async function send(
     return false;
   } finally {
     busy = false;
+    render();
     refreshAll();
   }
 }
@@ -546,16 +711,8 @@ async function onSubmit(event: SubmitEvent) {
   if (busy || !ready()) return;
 
   const input = el<HTMLInputElement>("amount");
-  const amount = parseAmount(input.value);
-  if (amount === null) {
-    setStatus("error", "Enter an amount greater than zero");
-    return;
-  }
-  const limit = available();
-  if (limit !== undefined && amount > limit) {
-    setStatus("error", mode === "stake" ? "Amount exceeds your balance" : "Amount exceeds your stake");
-    return;
-  }
+  const { amount, error } = amountEntry();
+  if (amount === null || error !== null) return;
 
   if (mode === "stake") {
     // The approval receipt is mined before this line, so the simulation inside
@@ -563,12 +720,16 @@ async function onSubmit(event: SubmitEvent) {
     if (!(await ensureAllowance(amount))) return;
     if (await send("Stake", () => writeStaking({ functionName: "stake", args: [amount] }))) {
       input.value = "";
+      renderForm();
+      renderPreview();
     }
     return;
   }
 
   if (await send("Withdrawal", () => writeStaking({ functionName: "withdraw", args: [amount] }))) {
     input.value = "";
+    renderForm();
+    renderPreview();
   }
 }
 
@@ -594,10 +755,26 @@ function bind() {
     const limit = available();
     if (limit === undefined) return;
     el<HTMLInputElement>("amount").value = toInputValue(limit);
+    renderAmountHint();
     renderPreview();
+    renderForm();
   });
 
-  el("amount").addEventListener("input", renderPreview);
+  el("amount").addEventListener("input", () => {
+    const input = el<HTMLInputElement>("amount");
+    const cleaned = sanitizeAmount(input.value);
+    if (cleaned !== input.value) {
+      const caret = input.selectionStart ?? cleaned.length;
+      const removed = input.value.length - cleaned.length;
+      input.value = cleaned;
+      // Keep the caret where the typing was, not flung to the end.
+      const next = Math.max(0, caret - removed);
+      input.setSelectionRange(next, next);
+    }
+    renderAmountHint();
+    renderPreview();
+    renderForm();
+  });
 
   el("activity-more").addEventListener("click", () => void loadActivity(true));
 
@@ -605,8 +782,20 @@ function bind() {
     if (!busy) void send("Claim", () => writeStaking({ functionName: "getReward" }));
   });
   el("reward-exit").addEventListener("click", () => {
-    if (!busy) void send("Exit", () => writeStaking({ functionName: "exit" }));
+    if (busy) return;
+    if (exitArmed === null) {
+      armExit();
+      return;
+    }
+    disarmExit();
+    void send("Exit", () => writeStaking({ functionName: "exit" }));
   });
+
+  // Any other intent cancels a pending exit rather than leaving it armed.
+  for (const id of ["reward-claim", "action-submit", "tab-stake", "tab-withdraw", "amount"]) {
+    el(id).addEventListener("focusin", disarmExit);
+    el(id).addEventListener("click", disarmExit);
+  }
 }
 
 export function start() {
@@ -622,6 +811,7 @@ export function start() {
     previousChainId = next.chainId;
 
     wallet = next;
+    disarmExit();
     renderConnectors();
     render();
 

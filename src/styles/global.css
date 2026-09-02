@@ -23,7 +23,7 @@
   --color-warning: #8a5a00;
   --color-warning-bg: #fdf6e3;
 
-  --text-figure: 2.375rem;
+  --text-figure: 2rem;
   --text-figure--line-height: 1.05;
   --text-figure--letter-spacing: -0.025em;
 }
@@ -94,9 +94,42 @@
   color: var(--color-faint);
 }
 
+/*
+ * A figure that changed since the last read is worth noticing — balances move
+ * because a transaction landed, not at random. The highlight decays rather than
+ * persisting, so it reads as "this just happened".
+ */
+@keyframes value-changed {
+  from {
+    background-color: color-mix(in oklab, var(--color-accent) 22%, transparent);
+  }
+  to {
+    background-color: transparent;
+  }
+}
+
+@utility value-changed {
+  animation: value-changed 1000ms ease-out;
+  border-radius: 0.25rem;
+  /* Breathing room for the highlight without nudging the layout. */
+  padding-inline: 0.12em;
+  margin-inline: -0.12em;
+}
+
 /* Figures in this app are compared column-wise, so they must not reflow as
    digits change — Inter's proportional default makes a ticking number jitter. */
 @utility figure {
   font-variant-numeric: tabular-nums;
   font-feature-settings: "zero" 1;
+}
+
+/* Motion here is feedback, never decoration, so it is safe to switch off. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }
