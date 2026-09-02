@@ -8,6 +8,14 @@ astro dev --background
 
 Manage the background server with `astro dev stop`, `astro dev status`, and `astro dev logs`.
 
+Run `npm run check` (astro check) before considering a change done.
+
+## Architecture
+
+No UI framework: the app is Astro templates plus one vanilla-TS client module,
+`src/lib/dapp.ts`, which talks to the contracts through viem. Do not add React,
+wagmi, or any other framework integration.
+
 ## Documentation
 
 Full documentation: https://docs.astro.build

@@ -1,17 +1,73 @@
 ---
-
+import AmountForm from "../components/AmountForm.astro";
+import RewardsPanel from "../components/RewardsPanel.astro";
+import StatCard from "../components/StatCard.astro";
+import WalletBar from "../components/WalletBar.astro";
+import Layout from "../layouts/Layout.astro";
+import { STAKING_ADDRESS, TOKEN_SYMBOL } from "../lib/contracts";
 ---
 
-<html lang="en">
-	<head>
-		<meta charset="utf-8" />
-		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-		<link rel="icon" href="/favicon.ico" />
-		<meta name="viewport" content="width=device-width" />
-		<meta name="generator" content={Astro.generator} />
-		<title>Astro</title>
-	</head>
-	<body>
-		<h1>Astro</h1>
-	</body>
-</html>
+<Layout
+  title="SushiFlush Staking"
+  description={`Stake ${TOKEN_SYMBOL} on Sepolia and track your rewards.`}
+>
+  <main class="mx-auto flex w-full max-w-3xl flex-col gap-6">
+    <WalletBar />
+
+    <!-- Transaction feedback: one slot reused by every write in the app. -->
+    <div
+      id="tx-status"
+      class="rounded-xl border border-neutral-200 bg-white p-4 text-sm dark:border-neutral-800 dark:bg-neutral-900"
+      hidden
+    >
+      <span id="tx-status-text"></span>
+      <a
+        id="tx-status-link"
+        class="ml-2 underline underline-offset-2"
+        target="_blank"
+        rel="noreferrer"
+        hidden>View on Etherscan</a
+      >
+    </div>
+
+    <section class="grid gap-3 sm:grid-cols-2">
+      <StatCard id="stat-wallet" label="In wallet" />
+      <StatCard id="stat-staked" label="Staked" />
+    </section>
+
+    <RewardsPanel />
+
+    <section class="grid gap-3 sm:grid-cols-2">
+      <AmountForm id="stake" title="Stake" action="Stake" balanceLabel="In wallet" />
+      <AmountForm id="withdraw" title="Withdraw" action="Withdraw" balanceLabel="Staked" />
+    </section>
+
+    <section>
+      <h2 class="mb-3 text-sm font-medium uppercase tracking-wide text-neutral-500">Pool</h2>
+      <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard id="stat-total-staked" label="Total staked" />
+        <StatCard id="stat-reward-rate" label="Reward rate" hint="per second" />
+        <StatCard id="stat-remaining" label="Unpaid rewards" />
+        <StatCard id="stat-period-ends" label="Period ends" />
+      </div>
+    </section>
+
+    <footer class="text-xs text-neutral-500">
+      Staking contract{" "}
+      <a
+        class="underline underline-offset-2"
+        href={`https://sepolia.etherscan.io/address/${STAKING_ADDRESS}`}
+        target="_blank"
+        rel="noreferrer">{STAKING_ADDRESS}</a
+      >. Pool statistics are readable without a wallet — they are plain <code>eth_call</code> reads.
+    </footer>
+  </main>
+</Layout>
+
+<script>
+  // Astro bundles this through Vite, so it can import from src/lib directly.
+  // The page is static HTML until this runs; there is no hydration step.
+  import { start } from "../lib/dapp";
+
+  start();
+</script>
