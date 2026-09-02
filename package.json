@@ -1,0 +1,30 @@
+{
+  "name": "sushiflush-dapp",
+  "type": "module",
+  "version": "0.1.0",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview",
+    "astro": "astro"
+  },
+  "dependencies": {
+    "@astrojs/react": "^6.0.5",
+    "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-query": "^5.102.8",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "astro": "^7.2.10",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "viem": "^2.56.3",
+    "wagmi": "^3.7.7"
+  },
+  "allowScripts": {
+    "esbuild": true
+  }
+}
