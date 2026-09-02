@@ -1,0 +1,46 @@
+<!--
+  The overlay is pointer-events-none so the page underneath stays usable — the
+  connect step exists to be acted on. Only the card itself takes clicks.
+-->
+<div id="tour" class="pointer-events-none fixed inset-0 z-50" hidden>
+  <!-- The dimming is this element's box-shadow spreading outwards, which leaves
+       a lit hole exactly where the subject is, with no clipping maths. -->
+  <div
+    id="tour-spot"
+    class="absolute shadow-[0_0_0_9999px_var(--color-scrim)] transition-all duration-200"
+  >
+  </div>
+
+  <div
+    id="tour-card"
+    class="pointer-events-auto absolute w-[min(23rem,calc(100vw-1rem))] rounded-xl border border-line bg-surface p-4 shadow-2xl transition-[top,left] duration-200"
+    role="dialog"
+    aria-labelledby="tour-title"
+  >
+    <p id="tour-step" class="label"></p>
+    <h3 id="tour-title" class="mt-2 text-[15px] font-semibold"></h3>
+    <p id="tour-body" class="mt-1.5 text-[13px] leading-relaxed text-muted"></p>
+
+    <div class="mt-4 flex items-center justify-between gap-3">
+      <button id="tour-skip" type="button" class="text-[12px] text-faint hover:text-muted">
+        Skip
+      </button>
+      <div class="flex gap-2">
+        <button
+          id="tour-back"
+          type="button"
+          class="rounded-lg px-3 py-1.5 text-[13px] font-medium text-muted transition-colors hover:bg-sunken hover:text-ink disabled:opacity-35 disabled:hover:bg-transparent"
+        >
+          Back
+        </button>
+        <button
+          id="tour-next"
+          type="button"
+          class="rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent-hover"
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

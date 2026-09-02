@@ -22,6 +22,7 @@
   --color-positive: #157f43;
   --color-warning: #8a5a00;
   --color-warning-bg: #fdf6e3;
+  --color-scrim: oklch(0% 0 0 / 0.55);
 
   --text-figure: 2rem;
   --text-figure--line-height: 1.05;
@@ -43,6 +44,7 @@
     --color-positive: #4ade80;
     --color-warning: #e5b04b;
     --color-warning-bg: #241c0c;
+    --color-scrim: oklch(0% 0 0 / 0.72);
   }
 }
 

@@ -16,6 +16,7 @@ import {
   shortAddress,
   toInputValue,
 } from "./format";
+import { bindTour, endTour, isTourActive, isTourSeen, startTour } from "./tour";
 import {
   connect,
   disconnect,
@@ -743,7 +744,33 @@ function setMode(next: Mode) {
   renderActivity();
 }
 
+/**
+ * Two walkthroughs, each shown once: how to connect, then what the connected
+ * app can do. Completion is remembered, so this only fires on a first visit —
+ * the Guide button reopens whichever one fits the current state.
+ */
+function maybeStartTour() {
+  // Discovery has to finish first, or the connect step spotlights an empty slot.
+  if (!discovered) return;
+
+  if (ready() && !isTourSeen("features")) {
+    // Connecting is exactly what the intro was asking for, so it counts as done.
+    if (isTourActive()) endTour();
+    startTour("features");
+    return;
+  }
+
+  if (!connected() && !isTourActive() && !isTourSeen("intro")) {
+    startTour("intro");
+  }
+}
+
 function bind() {
+  bindTour();
+  el("tour-open").addEventListener("click", () => {
+    if (!isTourActive()) startTour(ready() ? "features" : "intro");
+  });
+
   el("wallet-disconnect").addEventListener("click", () => disconnect());
   el("network-switch").addEventListener("click", () => void switchToChain());
 
@@ -821,6 +848,8 @@ export function start() {
       void refreshAccount().catch(() => {});
       void loadActivity();
     }
+
+    maybeStartTour();
   });
 
   void refreshPool().catch(() => {});
@@ -830,6 +859,7 @@ export function start() {
       discovered = true;
       renderConnectors();
       render();
+      maybeStartTour();
     });
 
   setInterval(refreshAll, POLL_MS);

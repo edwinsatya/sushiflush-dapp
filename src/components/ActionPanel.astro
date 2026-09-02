@@ -2,7 +2,7 @@
 import { TOKEN_SYMBOL } from "../lib/contracts";
 ---
 
-<section class="border-b border-line py-9">
+<section id="action-panel" class="border-b border-line py-9">
   <div class="grid gap-9 lg:grid-cols-[minmax(0,25rem)_1fr] lg:gap-12">
     <div>
       <!-- One form, two modes. Two side-by-side forms doubled the chrome and
@@ -85,7 +85,7 @@ import { TOKEN_SYMBOL } from "../lib/contracts";
     <!-- Only "rewards per day" is absent from the band above, so that is all
          this shows at rest; the comparison rows appear once there is an amount
          to compare against. -->
-    <aside class="lg:border-l lg:border-line lg:pl-12">
+    <aside id="preview-panel" class="lg:border-l lg:border-line lg:pl-12">
       <h2 id="preview-title" class="label">Your position</h2>
       <dl class="mt-3 divide-y divide-line border-y border-line">
         <div id="preview-row-staked" class="flex items-baseline justify-between gap-6 py-3" hidden>

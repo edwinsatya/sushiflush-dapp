@@ -9,21 +9,31 @@ import { chain } from "../lib/chain";
       <span class="label">{chain.name}</span>
     </div>
 
-    <!-- Both states ship in the HTML; the client module toggles [hidden]. -->
-    <div id="wallet-connect" class="flex items-center gap-2">
-      <span id="wallet-empty" class="text-[13px] text-muted" hidden>No wallet detected</span>
-    </div>
-
-    <div id="wallet-account" class="flex items-center gap-2.5" hidden>
-      <span class="size-1.5 rounded-full bg-positive" aria-hidden="true"></span>
-      <code id="wallet-address" class="font-mono text-[13px] text-muted"></code>
+    <div class="flex items-center gap-3">
       <button
-        id="wallet-disconnect"
+        id="tour-open"
         type="button"
         class="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:bg-sunken hover:text-ink"
       >
-        Disconnect
+        Guide
       </button>
+
+      <!-- Both states ship in the HTML; the client module toggles [hidden]. -->
+      <div id="wallet-connect" class="flex items-center gap-2">
+        <span id="wallet-empty" class="text-[13px] text-muted" hidden>No wallet detected</span>
+      </div>
+
+      <div id="wallet-account" class="flex items-center gap-2.5" hidden>
+        <span class="size-1.5 rounded-full bg-positive" aria-hidden="true"></span>
+        <code id="wallet-address" class="font-mono text-[13px] text-muted"></code>
+        <button
+          id="wallet-disconnect"
+          type="button"
+          class="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:bg-sunken hover:text-ink"
+        >
+          Disconnect
+        </button>
+      </div>
     </div>
   </div>
 </header>

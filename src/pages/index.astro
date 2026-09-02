@@ -4,6 +4,7 @@ import ActivityList from "../components/ActivityList.astro";
 import PoolTable from "../components/PoolTable.astro";
 import PositionPanel from "../components/PositionPanel.astro";
 import TopBar from "../components/TopBar.astro";
+import Tour from "../components/Tour.astro";
 import Layout from "../layouts/Layout.astro";
 import { STAKING_ADDRESS, TOKEN_SYMBOL } from "../lib/contracts";
 import { chain } from "../lib/chain";
@@ -30,6 +31,8 @@ import { chain } from "../lib/chain";
       >
     </footer>
   </main>
+
+  <Tour />
 </Layout>
 
 <script>
