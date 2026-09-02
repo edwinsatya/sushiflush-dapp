@@ -18,6 +18,10 @@ const { title, description } = Astro.props;
     <meta name="generator" content={Astro.generator} />
     {description && <meta name="description" content={description} />}
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#0b0b0a" media="(prefers-color-scheme: dark)" />
     <title>{title}</title>
   </head>
   <body class="min-h-screen bg-canvas font-sans text-[14px] leading-relaxed text-ink">
