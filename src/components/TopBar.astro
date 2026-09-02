@@ -1,0 +1,46 @@
+---
+import { chain } from "../lib/chain";
+---
+
+<header class="border-b border-line">
+  <div class="mx-auto flex h-14 w-full max-w-3xl items-center justify-between gap-4 px-5">
+    <div class="flex items-baseline gap-2.5">
+      <span class="text-[15px] font-semibold tracking-tight">SushiFlush</span>
+      <span class="label">{chain.name}</span>
+    </div>
+
+    <!-- Both states ship in the HTML; the client module toggles [hidden]. -->
+    <div id="wallet-connect" class="flex items-center gap-2">
+      <span id="wallet-empty" class="text-[13px] text-muted" hidden>No wallet detected</span>
+    </div>
+
+    <div id="wallet-account" class="flex items-center gap-2.5" hidden>
+      <span class="size-1.5 rounded-full bg-positive" aria-hidden="true"></span>
+      <code id="wallet-address" class="font-mono text-[13px] text-muted"></code>
+      <button
+        id="wallet-disconnect"
+        type="button"
+        class="rounded-md px-2 py-1 text-[13px] text-muted transition-colors hover:bg-sunken hover:text-ink"
+      >
+        Disconnect
+      </button>
+    </div>
+  </div>
+</header>
+
+<div id="network-warning" class="border-b border-line bg-warning-bg" hidden>
+  <div
+    class="mx-auto flex w-full max-w-3xl flex-wrap items-center justify-between gap-3 px-5 py-2.5 text-[13px] text-warning"
+  >
+    <span>This app runs on {chain.name}. Your wallet is on another network.</span>
+    <button
+      id="network-switch"
+      type="button"
+      class="font-medium underline underline-offset-4 hover:no-underline"
+    >
+      Switch network
+    </button>
+  </div>
+</div>
+
+<p id="wallet-error" class="mx-auto w-full max-w-3xl px-5 pt-3 text-[13px] text-accent" hidden></p>

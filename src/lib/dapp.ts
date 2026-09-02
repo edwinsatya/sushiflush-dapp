@@ -1,11 +1,14 @@
-import type { Address } from "viem";
+import { formatUnits, type Address } from "viem";
 
 import { chain, publicClient } from "./chain";
-import { STAKING_ADDRESS, staking, sushiFlush, TOKEN_SYMBOL } from "./contracts";
+import { STAKING_ADDRESS, TOKEN_SYMBOL, staking, sushiFlush } from "./contracts";
 import {
   EMPTY,
+  annualRate,
   describeError,
   formatAmount,
+  formatDuration,
+  formatPercent,
   formatTimestamp,
   parseAmount,
   shortAddress,
@@ -22,8 +25,12 @@ import {
   type WalletState,
 } from "./wallet";
 
-/** `earned` grows every second on-chain, so it is polled rather than pushed. */
+/** How often chain state is re-read. */
 const POLL_MS = 5_000;
+/** How often the claimable figure is re-projected between those reads. */
+const TICK_MS = 200;
+
+type Mode = "stake" | "withdraw";
 
 type Snapshot = {
   totalStaked?: bigint;
@@ -38,10 +45,13 @@ type Snapshot = {
 
 let data: Snapshot = {};
 let wallet: WalletState = { wallets: [], status: "idle" };
+let mode: Mode = "stake";
 /** True while a write is in flight; every action button is disabled meanwhile. */
 let busy = false;
 /** Wallet discovery is asynchronous — "no wallet" is only true once it ends. */
 let discovered = false;
+/** When `data.earned` was read, so the display can project forward from it. */
+let earnedReadAt = 0;
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -68,6 +78,11 @@ function requireWallet() {
   return client;
 }
 
+/** What the active tab operates on: wallet balance to stake, stake to withdraw. */
+function available(): bigint | undefined {
+  return mode === "stake" ? data.walletBalance : data.staked;
+}
+
 // ---------------------------------------------------------------- reads
 
 async function refreshPool() {
@@ -85,7 +100,13 @@ async function refreshPool() {
 
 async function refreshAccount() {
   if (!ready()) {
-    data = { ...data, walletBalance: undefined, staked: undefined, earned: undefined, allowance: undefined };
+    data = {
+      ...data,
+      walletBalance: undefined,
+      staked: undefined,
+      earned: undefined,
+      allowance: undefined,
+    };
     render();
     return;
   }
@@ -101,6 +122,7 @@ async function refreshAccount() {
       args: [address, STAKING_ADDRESS],
     }),
   ]);
+  earnedReadAt = Date.now();
   data = { ...data, walletBalance, staked, earned, allowance };
   render();
 }
@@ -115,16 +137,16 @@ function refreshAll() {
 
 function render() {
   renderWallet();
-  renderStats();
-  renderActions();
+  renderPosition();
+  renderPool();
+  renderForm();
+  renderPreview();
 }
 
 function renderWallet() {
-  const account = el("wallet-account");
-  const connectBox = el("wallet-connect");
-
-  account.hidden = !connected();
-  connectBox.hidden = connected();
+  el("wallet-account").hidden = !connected();
+  el("wallet-connect").hidden = connected();
+  el("wallet-empty").hidden = !discovered || wallet.wallets.length > 0;
 
   if (wallet.address) text("wallet-address", shortAddress(wallet.address));
 
@@ -135,39 +157,167 @@ function renderWallet() {
   el("network-warning").hidden = !connected() || wallet.chainId === chain.id;
 }
 
-function renderStats() {
-  text("stat-wallet", `${formatAmount(data.walletBalance, 2)} ${TOKEN_SYMBOL}`);
-  text("stat-staked", `${formatAmount(data.staked, 2)} ${TOKEN_SYMBOL}`);
-  text("reward-earned", formatAmount(data.earned, 6));
-
-  // Pool share only means something once both numbers are known and non-zero.
-  const share =
-    data.staked !== undefined && data.totalStaked
-      ? `${((Number(data.staked) / Number(data.totalStaked)) * 100).toFixed(1)}% of pool`
-      : "";
-  text("stat-staked-hint", share);
-
-  text("stat-total-staked", `${formatAmount(data.totalStaked, 2)} ${TOKEN_SYMBOL}`);
-  text("stat-reward-rate", formatAmount(data.rewardRate, 6));
-  text("stat-remaining", `${formatAmount(data.remainingReward, 2)} ${TOKEN_SYMBOL}`);
-  text("stat-period-ends", formatTimestamp(data.periodFinish));
-
-  text("stake-available", data.walletBalance === undefined ? EMPTY : formatAmount(data.walletBalance, 4));
-  text("withdraw-available", data.staked === undefined ? EMPTY : formatAmount(data.staked, 4));
+/**
+ * Rewards accrue per second on-chain, but they are only *read* every POLL_MS.
+ * Between reads the figure is projected from the account's share of the
+ * emission, then reconciled by the next read — a still number would look
+ * broken next to a per-second rate.
+ */
+function accrualPerSecond(): number {
+  if (!data.rewardRate || !data.totalStaked || !data.staked) return 0;
+  return (
+    Number(formatUnits(data.rewardRate, 18)) * (Number(data.staked) / Number(data.totalStaked))
+  );
 }
 
-function renderActions() {
-  const usable = ready() && !busy;
-  for (const id of ["stake-submit", "withdraw-submit", "reward-claim", "reward-exit"]) {
-    el<HTMLButtonElement>(id).disabled = !usable;
+function renderEarned() {
+  if (data.earned === undefined) {
+    text("pos-earned", EMPTY);
+    return;
   }
+
+  const base = Number(formatUnits(data.earned, 18));
+  // Emission stops at periodFinish, so the projection has to stop there too.
+  const finish = data.periodFinish ? Number(data.periodFinish) * 1000 : Infinity;
+  const elapsed = Math.max(0, Math.min(Date.now(), finish) - earnedReadAt) / 1000;
+
+  text("pos-earned", (base + accrualPerSecond() * elapsed).toFixed(6));
+}
+
+function renderPosition() {
+  text("pos-staked", formatAmount(data.staked, 2));
+  renderEarned();
+
+  const share =
+    data.staked !== undefined && data.totalStaked
+      ? `${formatPercent(Number(data.staked) / Number(data.totalStaked))} of the pool`
+      : "";
+  text("pos-share", share);
+
+  const usable = ready() && !busy;
   el<HTMLButtonElement>("reward-claim").disabled = !usable || !data.earned;
   el<HTMLButtonElement>("reward-exit").disabled = !usable || !data.staked;
 }
 
+function renderPool() {
+  text("pool-apr", formatPercent(annualRate(data.rewardRate, data.totalStaked)));
+  text("pool-apr-sub", data.totalStaked ? "at current pool size" : "");
+
+  text("pool-total", formatAmount(data.totalStaked, 2));
+  text("pool-total-sub", TOKEN_SYMBOL);
+
+  text("pool-emission", formatAmount(data.rewardRate, 6));
+  text(
+    "pool-emission-sub",
+    data.rewardRate === undefined
+      ? ""
+      : `${TOKEN_SYMBOL}/s · ${formatAmount(data.rewardRate * 86_400n, 0)} per day`,
+  );
+
+  text("pool-remaining", formatAmount(data.remainingReward, 2));
+  text("pool-remaining-sub", TOKEN_SYMBOL);
+
+  text("pool-ends", formatTimestamp(data.periodFinish));
+  text(
+    "pool-ends-sub",
+    data.periodFinish === undefined
+      ? ""
+      : formatDuration(Number(data.periodFinish) - Date.now() / 1000),
+  );
+}
+
+const TAB_ACTIVE = "bg-surface text-ink shadow-sm";
+const TAB_IDLE = "text-muted hover:text-ink";
+
+function renderForm() {
+  for (const tab of ["stake", "withdraw"] as const) {
+    const button = el<HTMLButtonElement>(`tab-${tab}`);
+    button.className = `rounded-[0.3125rem] px-4 py-1.5 text-[13px] font-medium transition-colors ${
+      mode === tab ? TAB_ACTIVE : TAB_IDLE
+    }`;
+    button.setAttribute("aria-selected", String(mode === tab));
+  }
+
+  text("amount-label", mode === "stake" ? "Amount to stake" : "Amount to withdraw");
+  text("amount-available-label", mode === "stake" ? "Balance" : "Staked");
+  text("amount-available", available() === undefined ? EMPTY : formatAmount(available(), 2));
+
+  const submit = el<HTMLButtonElement>("action-submit");
+  submit.textContent = mode === "stake" ? "Stake" : "Withdraw";
+  submit.disabled = !ready() || busy;
+}
+
+/**
+ * The amount in the field, applied to the current position — but only when it
+ * is a valid, affordable number. A projection from an over-balance amount would
+ * describe a transaction that cannot happen.
+ */
+function projection(): { staked: bigint; total: bigint } | undefined {
+  if (data.staked === undefined || data.totalStaked === undefined) return undefined;
+
+  const amount = parseAmount(el<HTMLInputElement>("amount").value);
+  if (amount === null) return undefined;
+
+  if (mode === "stake") {
+    if (data.walletBalance !== undefined && amount > data.walletBalance) return undefined;
+    return { staked: data.staked + amount, total: data.totalStaked + amount };
+  }
+
+  if (amount > data.staked) return undefined;
+  return { staked: data.staked - amount, total: data.totalStaked - amount };
+}
+
+function shareText(staked: bigint, total: bigint): string {
+  if (staked === 0n) return formatPercent(0);
+  if (!total) return EMPTY;
+  return formatPercent(Number(staked) / Number(total));
+}
+
+function dailyText(staked: bigint, total: bigint): string {
+  if (data.rewardRate === undefined || staked === 0n || !total) return formatAmount(0n, 2);
+  const perDay =
+    Number(formatUnits(data.rewardRate * 86_400n, 18)) * (Number(staked) / Number(total));
+  return perDay.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+/** Renders `current → projected`, collapsing to just `current` when idle. */
+function setPreviewRow(id: string, now: string, next: string | undefined) {
+  const projecting = next !== undefined && next !== now;
+  const nowEl = el(`${id}-now`);
+  nowEl.textContent = now;
+  nowEl.className = projecting ? "text-muted" : "";
+
+  el(`${id}-arrow`).hidden = !projecting;
+  const nextEl = el(`${id}-next`);
+  nextEl.hidden = !projecting;
+  nextEl.textContent = next ?? "";
+}
+
+function renderPreview() {
+  const staked = data.staked;
+  const total = data.totalStaked;
+  const next = projection();
+
+  if (staked === undefined || total === undefined) {
+    for (const row of ["preview-staked", "preview-share", "preview-daily"]) {
+      setPreviewRow(row, EMPTY, undefined);
+    }
+  } else {
+    setPreviewRow(
+      "preview-staked",
+      formatAmount(staked, 2),
+      next && formatAmount(next.staked, 2),
+    );
+    setPreviewRow("preview-share", shareText(staked, total), next && shareText(next.staked, next.total));
+    setPreviewRow("preview-daily", dailyText(staked, total), next && dailyText(next.staked, next.total));
+  }
+
+  const ended = data.periodFinish !== undefined && Number(data.periodFinish) * 1000 <= Date.now();
+  text("preview-note", ended ? "The reward period has ended — no new rewards accrue." : "");
+}
+
 function renderConnectors() {
   const box = el("wallet-connect");
-  el("wallet-empty").hidden = !discovered || wallet.wallets.length > 0;
 
   for (const found of wallet.wallets) {
     const id = `connect-${found.rdns}`;
@@ -177,15 +327,15 @@ function renderConnectors() {
     button.id = id;
     button.type = "button";
     button.className =
-      "flex items-center gap-2 rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 hover:bg-neutral-700 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200";
+      "flex items-center gap-2 rounded-lg bg-accent px-3.5 py-1.5 text-[13px] font-medium text-accent-ink transition-colors hover:bg-accent-hover";
     if (found.icon) {
       const img = document.createElement("img");
       img.src = found.icon;
       img.alt = "";
-      img.className = "size-4 rounded";
+      img.className = "size-4 rounded-[3px]";
       button.append(img);
     }
-    button.append(document.createTextNode(`Connect ${found.name}`));
+    button.append(document.createTextNode(found.name));
     button.addEventListener("click", () => void connect(found.rdns));
     box.append(button);
   }
@@ -193,9 +343,17 @@ function renderConnectors() {
 
 // ---------------------------------------------------------------- writes
 
-function setStatus(message: string, hash?: `0x${string}`) {
-  const box = el("tx-status");
-  box.hidden = false;
+type StatusTone = "pending" | "success" | "error";
+
+const TONE_DOT: Record<StatusTone, string> = {
+  pending: "bg-muted",
+  success: "bg-positive",
+  error: "bg-accent",
+};
+
+function setStatus(tone: StatusTone, message: string, hash?: `0x${string}`) {
+  el("tx-status").hidden = false;
+  el("tx-status-dot").className = `size-1.5 shrink-0 rounded-full ${TONE_DOT[tone]}`;
   text("tx-status-text", message);
 
   const link = el<HTMLAnchorElement>("tx-status-link");
@@ -214,22 +372,22 @@ async function send(
   request: () => Promise<{ hash: `0x${string}` }>,
 ): Promise<boolean> {
   busy = true;
-  renderActions();
+  render();
   try {
-    setStatus(`${label}: confirm in your wallet…`);
+    setStatus("pending", `${label} — confirm in your wallet`);
     const { hash } = await request();
 
-    setStatus(`${label}: waiting for confirmation…`, hash);
+    setStatus("pending", `${label} — waiting for confirmation`, hash);
     const receipt = await publicClient.waitForTransactionReceipt({ hash });
     if (receipt.status !== "success") {
-      setStatus(`${label} failed on-chain.`, hash);
+      setStatus("error", `${label} failed on-chain`, hash);
       return false;
     }
 
-    setStatus(`${label} confirmed.`, hash);
+    setStatus("success", `${label} confirmed`, hash);
     return true;
   } catch (error) {
-    setStatus(`${label} failed: ${describeError(error)}`);
+    setStatus("error", `${label} failed — ${describeError(error)}`);
     return false;
   } finally {
     busy = false;
@@ -273,60 +431,62 @@ async function ensureAllowance(amount: bigint): Promise<boolean> {
   });
 }
 
-function readAmount(inputId: string, available: bigint | undefined): bigint | null {
-  const input = el<HTMLInputElement>(inputId);
+async function onSubmit(event: SubmitEvent) {
+  event.preventDefault();
+  if (busy || !ready()) return;
+
+  const input = el<HTMLInputElement>("amount");
   const amount = parseAmount(input.value);
   if (amount === null) {
-    setStatus("Enter an amount greater than zero.");
-    return null;
+    setStatus("error", "Enter an amount greater than zero");
+    return;
   }
-  if (available !== undefined && amount > available) {
-    setStatus("Amount is larger than the available balance.");
-    return null;
+  const limit = available();
+  if (limit !== undefined && amount > limit) {
+    setStatus("error", mode === "stake" ? "Amount exceeds your balance" : "Amount exceeds your stake");
+    return;
   }
-  return amount;
-}
 
-async function onStake(event: SubmitEvent) {
-  event.preventDefault();
-  const amount = readAmount("stake-amount", data.walletBalance);
-  if (amount === null || busy) return;
+  if (mode === "stake") {
+    // The approval receipt is mined before this line, so the simulation inside
+    // the stake sees the new allowance regardless of when the UI catches up.
+    if (!(await ensureAllowance(amount))) return;
+    if (await send("Stake", () => writeStaking({ functionName: "stake", args: [amount] }))) {
+      input.value = "";
+    }
+    return;
+  }
 
-  // The approval receipt is mined before this line, so the simulation inside
-  // the stake sees the new allowance regardless of when the UI catches up.
-  if (!(await ensureAllowance(amount))) return;
-  const ok = await send("Stake", () => writeStaking({ functionName: "stake", args: [amount] }));
-  if (ok) el<HTMLInputElement>("stake-amount").value = "";
-}
-
-async function onWithdraw(event: SubmitEvent) {
-  event.preventDefault();
-  const amount = readAmount("withdraw-amount", data.staked);
-  if (amount === null || busy) return;
-
-  const ok = await send("Withdraw", () => writeStaking({ functionName: "withdraw", args: [amount] }));
-  if (ok) el<HTMLInputElement>("withdraw-amount").value = "";
+  if (await send("Withdrawal", () => writeStaking({ functionName: "withdraw", args: [amount] }))) {
+    input.value = "";
+  }
 }
 
 // ---------------------------------------------------------------- wiring
+
+function setMode(next: Mode) {
+  mode = next;
+  el<HTMLInputElement>("amount").value = "";
+  renderForm();
+  renderPreview();
+}
 
 function bind() {
   el("wallet-disconnect").addEventListener("click", () => disconnect());
   el("network-switch").addEventListener("click", () => void switchToChain());
 
-  el("stake").addEventListener("submit", (e) => void onStake(e as SubmitEvent));
-  el("withdraw").addEventListener("submit", (e) => void onWithdraw(e as SubmitEvent));
+  el("tab-stake").addEventListener("click", () => setMode("stake"));
+  el("tab-withdraw").addEventListener("click", () => setMode("withdraw"));
 
-  el("stake-max").addEventListener("click", () => {
-    if (data.walletBalance !== undefined) {
-      el<HTMLInputElement>("stake-amount").value = toInputValue(data.walletBalance);
-    }
+  el("action-form").addEventListener("submit", (e) => void onSubmit(e as SubmitEvent));
+  el("amount-max").addEventListener("click", () => {
+    const limit = available();
+    if (limit === undefined) return;
+    el<HTMLInputElement>("amount").value = toInputValue(limit);
+    renderPreview();
   });
-  el("withdraw-max").addEventListener("click", () => {
-    if (data.staked !== undefined) {
-      el<HTMLInputElement>("withdraw-amount").value = toInputValue(data.staked);
-    }
-  });
+
+  el("amount").addEventListener("input", renderPreview);
 
   el("reward-claim").addEventListener("click", () => {
     if (!busy) void send("Claim", () => writeStaking({ functionName: "getReward" }));
@@ -363,9 +523,9 @@ export function start() {
     .finally(() => {
       discovered = true;
       renderConnectors();
+      render();
     });
 
-  // A single timer for the whole page: `earned` accrues per second, and the
-  // pool numbers move whenever anyone else stakes.
   setInterval(refreshAll, POLL_MS);
+  setInterval(renderEarned, TICK_MS);
 }

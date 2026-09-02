@@ -1,0 +1,17 @@
+---
+interface Props {
+  /** Element id the client module writes the value into. */
+  id: string;
+  label: string;
+}
+
+const { id, label } = Astro.props;
+---
+
+<div class="flex items-baseline justify-between gap-6 py-3">
+  <dt class="text-[13px] text-muted">{label}</dt>
+  <dd class="text-right">
+    <span id={id} class="figure text-[14px]">—</span>
+    <span id={`${id}-sub`} class="ml-1.5 text-[12px] text-faint"></span>
+  </dd>
+</div>

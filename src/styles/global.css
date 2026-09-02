@@ -1,1 +1,102 @@
 @import "tailwindcss";
+
+/*
+ * One palette, addressed by role rather than by hue. Dark mode re-points the
+ * same variables in the media query below, so no utility in the app needs a
+ * `dark:` counterpart — the colour swap happens in the cascade, once.
+ */
+@theme {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --color-canvas: #faf9f7;
+  --color-surface: #ffffff;
+  --color-sunken: #f1efec;
+  --color-line: #e5e2dc;
+  --color-ink: #191815;
+  --color-muted: #6d6a64;
+  --color-faint: #9b978e;
+  --color-accent: #c4462a;
+  --color-accent-hover: #a93a20;
+  --color-accent-ink: #ffffff;
+  --color-positive: #157f43;
+  --color-warning: #8a5a00;
+  --color-warning-bg: #fdf6e3;
+
+  --text-figure: 2.375rem;
+  --text-figure--line-height: 1.05;
+  --text-figure--letter-spacing: -0.025em;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-canvas: #0b0b0a;
+    --color-surface: #131312;
+    --color-sunken: #1c1b19;
+    --color-line: #292824;
+    --color-ink: #f0eeea;
+    --color-muted: #8c8981;
+    --color-faint: #66645e;
+    --color-accent: #ff6a45;
+    --color-accent-hover: #ff8163;
+    --color-accent-ink: #21100a;
+    --color-positive: #4ade80;
+    --color-warning: #e5b04b;
+    --color-warning-bg: #241c0c;
+  }
+}
+
+@layer base {
+  html {
+    color-scheme: light dark;
+    background-color: var(--color-canvas);
+  }
+
+  body {
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Tailwind v4's preflight leaves buttons at `cursor: default`. Every button
+     in this app is a real control, so opt the whole app back in rather than
+     repeating `cursor-pointer` on each one. */
+  button:not(:disabled),
+  [role="tab"]:not(:disabled),
+  a[href] {
+    cursor: pointer;
+  }
+
+  button:disabled {
+    cursor: not-allowed;
+  }
+
+  /* Keyboard focus only — a visible ring on every mouse click reads as noise. */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  ::selection {
+    background-color: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+}
+
+/* Section eyebrows. Repeated often enough that inlining six utilities each
+   time buries the markup. */
+@utility label {
+  font-size: 0.6875rem;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--color-faint);
+}
+
+/* Figures in this app are compared column-wise, so they must not reflow as
+   digits change — Inter's proportional default makes a ticking number jitter. */
+@utility figure {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "zero" 1;
+}

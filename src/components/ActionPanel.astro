@@ -1,0 +1,117 @@
+---
+import { TOKEN_SYMBOL } from "../lib/contracts";
+---
+
+<section class="border-b border-line py-9">
+  <div class="grid gap-9 lg:grid-cols-[minmax(0,25rem)_1fr] lg:gap-12">
+    <div>
+      <!-- One form, two modes. Two side-by-side forms doubled the chrome and
+           made neither one the obvious next step. -->
+      <div class="inline-flex rounded-lg bg-sunken p-0.5" role="tablist" aria-label="Action">
+        <button
+          id="tab-stake"
+          type="button"
+          role="tab"
+          class="rounded-[0.3125rem] px-4 py-1.5 text-[13px] font-medium transition-colors"
+        >
+          Stake
+        </button>
+        <button
+          id="tab-withdraw"
+          type="button"
+          role="tab"
+          class="rounded-[0.3125rem] px-4 py-1.5 text-[13px] font-medium transition-colors"
+        >
+          Withdraw
+        </button>
+      </div>
+
+      <form id="action-form" class="mt-4">
+        <div
+          class="rounded-xl border border-line bg-surface px-4 py-3 transition-colors focus-within:border-faint"
+        >
+          <div class="flex items-baseline justify-between gap-3">
+            <label id="amount-label" for="amount" class="label">Amount to stake</label>
+            <span class="text-[12px] text-muted">
+              <span id="amount-available-label">Balance</span>
+              <span id="amount-available" class="figure ml-1">—</span>
+            </span>
+          </div>
+
+          <div class="mt-2 flex items-center gap-3">
+            <input
+              id="amount"
+              name="amount"
+              type="text"
+              inputmode="decimal"
+              autocomplete="off"
+              placeholder="0.00"
+              class="figure w-full min-w-0 bg-transparent text-[26px] font-medium tracking-tight outline-none placeholder:text-faint"
+            />
+            <span class="shrink-0 text-[13px] text-muted">{TOKEN_SYMBOL}</span>
+            <button
+              id="amount-max"
+              type="button"
+              class="shrink-0 rounded-md border border-line px-1.5 py-0.5 text-[11px] font-medium text-muted transition-colors hover:border-faint hover:text-ink"
+            >
+              MAX
+            </button>
+          </div>
+        </div>
+
+        <button
+          id="action-submit"
+          type="submit"
+          class="mt-3 w-full rounded-lg bg-accent px-4 py-2.5 text-[14px] font-medium text-accent-ink transition-colors hover:bg-accent-hover disabled:opacity-35 disabled:hover:bg-accent"
+        >
+          Stake
+        </button>
+      </form>
+
+      <!-- Sits under the button so feedback lands where the click did. -->
+      <div id="tx-status" class="mt-3 flex items-start gap-2 text-[13px]" hidden>
+        <span id="tx-status-dot" class="mt-[7px] size-1.5 shrink-0 rounded-full bg-muted"></span>
+        <span id="tx-status-text" class="text-muted"></span>
+        <a
+          id="tx-status-link"
+          class="shrink-0 text-muted underline underline-offset-4 hover:text-ink"
+          target="_blank"
+          rel="noreferrer"
+          hidden>Etherscan</a
+        >
+      </div>
+    </div>
+
+    <!-- What the amount in the field would do, recomputed as it is typed. -->
+    <aside class="lg:border-l lg:border-line lg:pl-12">
+      <h2 id="preview-title" class="label">Your position</h2>
+      <dl class="mt-3 divide-y divide-line border-y border-line">
+        <div class="flex items-baseline justify-between gap-6 py-3">
+          <dt class="text-[13px] text-muted">Staked</dt>
+          <dd class="figure flex items-baseline justify-end gap-1.5 text-right text-[14px]">
+            <span id="preview-staked-now">—</span>
+            <span id="preview-staked-arrow" class="text-faint" hidden>&rarr;</span>
+            <span id="preview-staked-next" hidden></span>
+          </dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-6 py-3">
+          <dt class="text-[13px] text-muted">Pool share</dt>
+          <dd class="figure flex items-baseline justify-end gap-1.5 text-right text-[14px]">
+            <span id="preview-share-now">—</span>
+            <span id="preview-share-arrow" class="text-faint" hidden>&rarr;</span>
+            <span id="preview-share-next" hidden></span>
+          </dd>
+        </div>
+        <div class="flex items-baseline justify-between gap-6 py-3">
+          <dt class="text-[13px] text-muted">Rewards per day</dt>
+          <dd class="figure flex items-baseline justify-end gap-1.5 text-right text-[14px]">
+            <span id="preview-daily-now">—</span>
+            <span id="preview-daily-arrow" class="text-faint" hidden>&rarr;</span>
+            <span id="preview-daily-next" hidden></span>
+          </dd>
+        </div>
+      </dl>
+      <p id="preview-note" class="mt-3 text-[12px] text-faint"></p>
+    </aside>
+  </div>
+</section>

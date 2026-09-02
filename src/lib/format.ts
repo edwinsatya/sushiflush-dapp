@@ -43,6 +43,37 @@ export function toInputValue(value: bigint): string {
   return formatUnits(value, TOKEN_DECIMALS);
 }
 
+const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
+
+/** Coarse "6d 22h" style countdown — minutes are noise at this range. */
+export function formatDuration(seconds: number): string {
+  if (seconds <= 0) return "ended";
+  const days = Math.floor(seconds / 86_400);
+  const hours = Math.floor((seconds % 86_400) / 3_600);
+  const minutes = Math.floor((seconds % 3_600) / 60);
+  if (days > 0) return `${days}d ${hours}h`;
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  return `${minutes}m`;
+}
+
+/**
+ * Annualised rate at the current pool size: every staker shares one emission
+ * stream, so the rate falls as more is staked. Undefined while the pool is
+ * empty, where the figure would be infinite rather than merely large.
+ */
+export function annualRate(rewardRate: bigint | undefined, totalStaked: bigint | undefined): number | undefined {
+  if (rewardRate === undefined || !totalStaked) return undefined;
+  return (Number(rewardRate) * SECONDS_PER_YEAR) / Number(totalStaked);
+}
+
+export function formatPercent(fraction: number | undefined): string {
+  if (fraction === undefined) return EMPTY;
+  const percent = fraction * 100;
+  return `${percent.toLocaleString(undefined, {
+    maximumFractionDigits: percent >= 100 ? 0 : 2,
+  })}%`;
+}
+
 /**
  * viem wraps the wallet's raw error in layers. Walk down to the interesting one
  * so the UI can show "InsufficientStake" instead of a stack of RPC noise.
