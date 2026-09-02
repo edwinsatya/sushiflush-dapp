@@ -1,5 +1,6 @@
 import { formatUnits, type Address } from "viem";
 
+import { scanActivity, type ActivityEntry, type ActivityKind } from "./activity";
 import { chain, publicClient } from "./chain";
 import { STAKING_ADDRESS, TOKEN_SYMBOL, staking, sushiFlush } from "./contracts";
 import {
@@ -9,6 +10,7 @@ import {
   formatAmount,
   formatDuration,
   formatPercent,
+  formatRelative,
   formatTimestamp,
   parseAmount,
   shortAddress,
@@ -52,6 +54,15 @@ let busy = false;
 let discovered = false;
 /** When `data.earned` was read, so the display can project forward from it. */
 let earnedReadAt = 0;
+
+type ActivityState = {
+  status: "disconnected" | "loading" | "ready" | "error";
+  entries: ActivityEntry[];
+  /** Next block to walk back from, or null once history is exhausted. */
+  cursor: bigint | null;
+};
+
+let activity: ActivityState = { status: "disconnected", entries: [], cursor: null };
 
 function el<T extends HTMLElement = HTMLElement>(id: string): T {
   const node = document.getElementById(id);
@@ -141,6 +152,7 @@ function render() {
   renderPool();
   renderForm();
   renderPreview();
+  renderActivity();
 }
 
 function renderWallet() {
@@ -316,6 +328,103 @@ function renderPreview() {
   text("preview-note", ended ? "The reward period has ended — no new rewards accrue." : "");
 }
 
+const ACTIVITY_LABEL: Record<ActivityKind, string> = {
+  Staked: "Staked",
+  Withdrawn: "Withdrew",
+  RewardPaid: "Claimed",
+};
+
+function setActivity(patch: Partial<ActivityState>) {
+  activity = { ...activity, ...patch };
+  renderActivity();
+}
+
+/**
+ * Reloads from the chain head. `append` continues an existing walk instead,
+ * which is what the "Load earlier" button does with the previous cursor.
+ */
+async function loadActivity(append = false) {
+  if (!ready()) {
+    setActivity({ status: "disconnected", entries: [], cursor: null });
+    return;
+  }
+
+  const account = wallet.address as Address;
+  const from = append ? activity.cursor : await publicClient.getBlockNumber();
+  if (from === null) return;
+
+  setActivity({ status: "loading" });
+  try {
+    const page = await scanActivity(account, from);
+    // The wallet may have changed while the walk was in flight.
+    if (wallet.address !== account) return;
+    setActivity({
+      status: "ready",
+      entries: append ? [...activity.entries, ...page.entries] : page.entries,
+      cursor: page.cursor,
+    });
+  } catch {
+    setActivity({ status: "error" });
+  }
+}
+
+function activityRow(entry: ActivityEntry): HTMLLIElement {
+  const row = document.createElement("li");
+  row.className = "flex items-baseline justify-between gap-4 py-3";
+
+  const kind = document.createElement("span");
+  kind.className = "text-[13px]";
+  kind.textContent = ACTIVITY_LABEL[entry.kind];
+
+  const right = document.createElement("span");
+  right.className = "flex items-baseline gap-4";
+
+  const amount = document.createElement("span");
+  amount.className = "figure text-[14px]";
+  amount.textContent = formatAmount(entry.amount, 4);
+
+  const when = document.createElement("span");
+  when.className = "w-16 text-right text-[12px] text-faint";
+  when.textContent = entry.timestamp ? formatRelative(entry.timestamp) : EMPTY;
+
+  const link = document.createElement("a");
+  link.className = "text-[12px] text-faint underline underline-offset-4 hover:text-muted";
+  link.href = `${chain.blockExplorers.default.url}/tx/${entry.hash}`;
+  link.target = "_blank";
+  link.rel = "noreferrer";
+  link.textContent = "tx";
+
+  right.append(amount, when, link);
+  row.append(kind, right);
+  return row;
+}
+
+function renderActivity() {
+  const list = el("activity-list");
+  const note = el("activity-note");
+  const more = el<HTMLButtonElement>("activity-more");
+
+  const hasEntries = activity.entries.length > 0;
+  list.hidden = !hasEntries;
+  list.replaceChildren(...activity.entries.map(activityRow));
+
+  const NOTES: Record<ActivityState["status"], string> = {
+    disconnected: connected()
+      ? `Switch to ${chain.name} to see your activity.`
+      : "Connect a wallet to see your activity.",
+    // Only shown on a cold load; a refresh keeps the existing rows visible.
+    loading: hasEntries ? "" : "Loading…",
+    ready: hasEntries ? "" : "No staking activity for this account yet.",
+    error: "Could not load activity from the RPC.",
+  };
+  note.textContent = NOTES[activity.status];
+  note.hidden = note.textContent === "";
+
+  // Offered only while there is history left to walk back through.
+  more.hidden = activity.cursor === null || activity.status === "disconnected";
+  more.disabled = activity.status === "loading";
+}
+
 function renderConnectors() {
   const box = el("wallet-connect");
 
@@ -385,6 +494,7 @@ async function send(
     }
 
     setStatus("success", `${label} confirmed`, hash);
+    void loadActivity();
     return true;
   } catch (error) {
     setStatus("error", `${label} failed — ${describeError(error)}`);
@@ -469,6 +579,7 @@ function setMode(next: Mode) {
   el<HTMLInputElement>("amount").value = "";
   renderForm();
   renderPreview();
+  renderActivity();
 }
 
 function bind() {
@@ -487,6 +598,8 @@ function bind() {
   });
 
   el("amount").addEventListener("input", renderPreview);
+
+  el("activity-more").addEventListener("click", () => void loadActivity(true));
 
   el("reward-claim").addEventListener("click", () => {
     if (!busy) void send("Claim", () => writeStaking({ functionName: "getReward" }));
@@ -514,7 +627,10 @@ export function start() {
 
     // Re-read only when the account or network actually moved; the store also
     // emits for connecting/error transitions, which change nothing on-chain.
-    if (identityChanged) void refreshAccount().catch(() => {});
+    if (identityChanged) {
+      void refreshAccount().catch(() => {});
+      void loadActivity();
+    }
   });
 
   void refreshPool().catch(() => {});

@@ -20,5 +20,12 @@ export const staking = {
   abi: sushiFlushStakingAbi,
 } as const;
 
+/**
+ * Block the staking contract was deployed in, read from the
+ * `OwnershipTransferred` log its constructor emits. Event history never needs
+ * to be scanned below this, which keeps the log walk short.
+ */
+export const STAKING_DEPLOY_BLOCK = 11_616_917n;
+
 export const TOKEN_SYMBOL = "SFLUSH";
 export const TOKEN_DECIMALS = 18;

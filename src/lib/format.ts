@@ -43,6 +43,15 @@ export function toInputValue(value: bigint): string {
   return formatUnits(value, TOKEN_DECIMALS);
 }
 
+/** Compact "2h ago" for a list where exact clock times would be noise. */
+export function formatRelative(seconds: number): string {
+  const delta = Math.max(0, Date.now() / 1000 - seconds);
+  if (delta < 60) return "just now";
+  if (delta < 3_600) return `${Math.floor(delta / 60)}m ago`;
+  if (delta < 86_400) return `${Math.floor(delta / 3_600)}h ago`;
+  return `${Math.floor(delta / 86_400)}d ago`;
+}
+
 const SECONDS_PER_YEAR = 365 * 24 * 60 * 60;
 
 /** Coarse "6d 22h" style countdown — minutes are noise at this range. */
