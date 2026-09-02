@@ -1,0 +1,17 @@
+# Netlify / Cloudflare Pages header rules. Other hosts need the equivalent:
+# vercel.json "headers", or an nginx/Caddy block.
+/*
+  # A wallet UI inside someone else's iframe is a drainer pattern. Both are
+  # sent because older browsers only honour X-Frame-Options.
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'; base-uri 'none'; form-action 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: geolocation=(), camera=(), microphone=(), payment=(), usb=()
+
+# A full CSP is left commented out because it has to be verified against the
+# deployed page first: Astro may inline critical CSS (needs style-src
+# 'unsafe-inline'), and EIP-6963 wallets announce their icons as data: URIs.
+# Pin connect-src to the RPC you actually ship with.
+#
+#  Content-Security-Policy: default-src 'self'; connect-src 'self' https://11155111.rpc.thirdweb.com; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'

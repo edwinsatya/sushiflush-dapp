@@ -1,0 +1,5 @@
+# Static page with no API surface: everything is read from the chain in the
+# visitor's browser. Crawlers that execute JS will hit the public RPC on each
+# render, which is the only cost of being crawled.
+User-agent: *
+Allow: /
